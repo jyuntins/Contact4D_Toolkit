@@ -1,0 +1,10 @@
+# Core (required for io / projection / camera-space conversion / undistortion / fast visualization)
+numpy>=1.24
+opencv-python>=4.8
+scipy>=1.10
+torch>=2.0
+smplx>=0.1.28
+
+# Optional (only needed for --renderer pyrender in scripts/visualize_models.py)
+# pyrender>=0.1.45
+# trimesh>=4.0
