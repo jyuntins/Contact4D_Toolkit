@@ -60,30 +60,43 @@ def image_path(sequence_path: PathLike, camera: str, mode: str, frame_id: int) -
 
 
 class MetricExtrinsics:
-    """One camera/mode's full ``processed_data/metric_extrinsics`` trajectory."""
+    """One camera/mode's full ``processed_data/camera_params`` trajectory.
+
+    Falls back to the older ``metric_extrinsics`` folder name if
+    ``camera_params`` isn't present in a given sequence.
+    """
 
     def __init__(self, sequence_path: PathLike, camera: str, mode: str = "rgb"):
         self.sequence_path = Path(sequence_path)
         self.camera = camera
         self.mode = mode
-        root = self.sequence_path / "processed_data" / "metric_extrinsics"
+        root = self.sequence_path / "processed_data" / "camera_params"
+        if not root.is_dir():
+            legacy_root = self.sequence_path / "processed_data" / "metric_extrinsics"
+            if legacy_root.is_dir():
+                root = legacy_root
         npz_path = root / camera / f"{mode}.npz"
         if not npz_path.is_file():
-            raise FileNotFoundError(f"no metric_extrinsics for {camera}/{mode}: {npz_path}")
+            raise FileNotFoundError(f"no camera_params for {camera}/{mode}: {npz_path}")
 
         with np.load(str(npz_path), allow_pickle=False) as data:
             self.frame_ids = data["frame_ids"].astype(int)
             self.world_to_camera = data["world_to_camera"]
             self.camera_to_world = data["camera_to_world"]
             self.intrinsics = data["intrinsics"]
-            self.source_calibration_frame_ids = data["source_calibration_frame_ids"].astype(int)
+            if "source_calibration_frame_ids" in data.files:
+                self.source_calibration_frame_ids = data["source_calibration_frame_ids"].astype(int)
+            else:
+                self.source_calibration_frame_ids = np.full_like(self.frame_ids, -1)
             self.image_width = int(np.asarray(data["image_width"]))
             self.image_height = int(np.asarray(data["image_height"]))
         self._index_by_frame: Dict[int, int] = {
             frame: index for index, frame in enumerate(self.frame_ids.tolist())
         }
 
-        self.camera_model = "OPENCV_FISHEYE"
+        # Fall back to inferring the model from the camera name when this
+        # sequence's metadata doesn't carry an explicit camera_model entry.
+        self.camera_model = "ARIA_RADTAN_THIN_PRISM_FISHEYE_15" if camera.startswith("aria") else "OPENCV_FISHEYE"
         metadata_path = root / "_metadata.json"
         if metadata_path.is_file():
             metadata = json.loads(metadata_path.read_text())
@@ -96,13 +109,13 @@ class MetricExtrinsics:
             return self._index_by_frame[frame_id]
         except KeyError:
             raise KeyError(
-                f"frame {frame_id} not in {self.camera}/{self.mode} metric_extrinsics"
+                f"frame {frame_id} not in {self.camera}/{self.mode} camera_params"
             ) from None
 
     def camera_at(self, frame_id: int) -> Camera:
         """Build a `Camera` for one frame of this trajectory."""
         index = self.frame_index(frame_id)
-        return Camera.from_metric_extrinsics_frame(
+        return Camera.from_camera_params_frame(
             name=self.camera,
             mode=self.mode,
             camera_model=self.camera_model,
@@ -114,12 +127,17 @@ class MetricExtrinsics:
 
 
 def list_metric_cameras(sequence_path: PathLike) -> List[Tuple[str, str]]:
-    """List every ``(camera, mode)`` pair exported to ``metric_extrinsics``."""
-    root = Path(sequence_path) / "processed_data" / "metric_extrinsics"
+    """List every ``(camera, mode)`` pair exported to ``camera_params``."""
+    root = Path(sequence_path) / "processed_data" / "camera_params"
+    if not root.is_dir():
+        legacy_root = Path(sequence_path) / "processed_data" / "metric_extrinsics"
+        if legacy_root.is_dir():
+            root = legacy_root
     metadata_path = root / "_metadata.json"
     if metadata_path.is_file():
         metadata = json.loads(metadata_path.read_text())
-        return [tuple(entry) for entry in metadata["cameras"]]
+        if "cameras" in metadata:
+            return [tuple(entry) for entry in metadata["cameras"]]
     pairs = []
     for camera_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         for npz_path in sorted(camera_dir.glob("*.npz")):

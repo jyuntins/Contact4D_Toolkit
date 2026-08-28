@@ -17,7 +17,9 @@ import numpy as np
 
 from .cameras import Camera
 
-_DEFAULT_COLORS = ((128, 0, 128), (30, 144, 255), (0, 165, 255), (60, 179, 113))
+# BGR; same accent blue as contact4d.mesh_render_pyrender's default mesh
+# color, so the two backends read as one consistent look.
+_DEFAULT_COLORS = ((255, 89, 26),)
 
 
 def render_meshes_fast(
@@ -28,6 +30,7 @@ def render_meshes_fast(
     colors: Sequence[Tuple[int, int, int]] = _DEFAULT_COLORS,
     alpha: float = 0.7,
     supersample: int = 2,
+    draw_edges: bool = False,
 ) -> np.ndarray:
     """Overlay one or more meshes (sharing one face topology) onto `image`.
 
@@ -45,6 +48,11 @@ def render_meshes_fast(
         alpha: overlay blend weight (1.0 = fully opaque mesh).
         supersample: render at this integer multiple of `image`'s resolution
             then downsample, for smoother silhouette edges.
+        draw_edges: stroke each triangle's outline in black on top of the
+            fill. Off by default -- SMPL/SMPL-X (6890/10475 verts) project
+            to triangles only a few pixels wide at typical framing, so the
+            per-triangle edges overlap densely enough to hide `colors`
+            entirely under what reads as solid black.
 
     Returns: a new BGR image; `image` is not modified in place.
     """
@@ -58,7 +66,8 @@ def render_meshes_fast(
         points_2d = camera.project(np.asarray(vertices)) * supersample
         polygons = np.asarray(points_2d[faces], dtype=np.int32)
         cv2.fillPoly(canvas, polygons, color=color)
-        cv2.polylines(canvas, polygons, isClosed=True, color=(0, 0, 0), thickness=supersample, lineType=cv2.LINE_AA)
+        if draw_edges:
+            cv2.polylines(canvas, polygons, isClosed=True, color=(0, 0, 0), thickness=supersample, lineType=cv2.LINE_AA)
 
     rendered = cv2.resize(canvas, (width, height), interpolation=cv2.INTER_AREA)
     return cv2.addWeighted(rendered, alpha, image, 1 - alpha, 0)

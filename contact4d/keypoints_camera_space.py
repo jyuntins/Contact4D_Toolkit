@@ -25,9 +25,9 @@ def transform_points_to_camera(points_world: np.ndarray, camera: Camera) -> np.n
 def transform_keypoints_to_camera(keypoints: Dict[str, np.ndarray], camera: Camera) -> Dict[str, np.ndarray]:
     """Transform a ``{key: (N,4)}`` (x,y,z,confidence) keypoint dict to camera space.
 
-    Works for both the body (``poses3d``/``fit_poses3d``, 17 joints) and
-    hand (``pose_corrective``, 21 joints) annotation shapes. The confidence
-    column is passed through unchanged.
+    Works for both the body (``body_pose3d``, 17 joints) and hand
+    (``hand_pose3d``, 21 joints) annotation shapes. The confidence column is
+    passed through unchanged.
     """
     transformed = {}
     for key, array in keypoints.items():

@@ -5,15 +5,20 @@
 (one shared focal length; 6 radial, 2 tangential, 4 thin-prism terms).
 
 This is the model used by every Aria egocentric stream in Contact4D's
-``metric_extrinsics`` export (``camera_model:
+``camera_params`` export (``camera_model:
 "ARIA_RADTAN_THIN_PRISM_FISHEYE_15"``). It is Meta's Aria camera calibration
 model, re-implemented here from scratch in plain numpy -- **no
 `projectaria_tools` SDK dependency is required** to project points with it.
 
-Contact4D's ``rgb`` stream is stored square (no rotation ambiguity). The
-``left``/``right`` (SLAM) streams are stored rotated 90 degrees from the
-camera's native sensor frame; call `rotate_to_upright` after projecting to
-match the pixel coordinates of the as-shipped images.
+All three Aria streams (``rgb``, ``left``, ``right``) are physically mounted
+rotated 90 degrees from the device's upright/human-view frame, and are
+shipped pre-rotated back to upright -- but the intrinsics/distortion model
+here is defined in the camera's native (unrotated) sensor frame regardless
+of mode. Always call `rotate_to_upright` after projecting to match the
+pixel coordinates of the as-shipped images. This is easy to miss for
+``rgb`` specifically: it happens to be stored square, so skipping the
+rotation doesn't produce a shape mismatch -- only silently wrong pixel
+positions.
 """
 
 from __future__ import annotations
@@ -27,7 +32,12 @@ _START_P = _START_K + _NUM_RADIAL  # 9
 _START_S = _START_P + 2  # 11
 
 
-def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray, eps: float = 1e-9) -> np.ndarray:
+def project_cam_points(
+    points_cam: np.ndarray,
+    intrinsics: np.ndarray,
+    eps: float = 1e-9,
+    max_valid_angle_deg: float = None,
+) -> np.ndarray:
     """Project camera-frame points to raw-device-frame pixel coordinates.
 
     Args:
@@ -35,11 +45,29 @@ def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray, eps: floa
             ``Camera.world_to_cam``).
         intrinsics: ``(15,)`` RadTanThinPrism parameter vector, see module
             docstring for the parameter order.
+        max_valid_angle_deg: if set, points whose ray angle off the optical
+            axis (``theta = arctan(r)``, always in ``[0, 90)`` degrees --
+            *not* clamped by "behind camera") exceeds this are also treated
+            as invalid, in addition to ``z <= 0``. This model's radial
+            polynomial is only calibrated within the camera's real FOV; a
+            point technically in front of the camera (``z > 0``) but at a
+            near-90-degree grazing angle -- e.g. a body joint only
+            centimeters from a head-mounted Aria device, off to the side --
+            extrapolates the polynomial far outside its calibrated domain
+            and can explode to a wildly out-of-frame pixel coordinate rather
+            than erroring. There's no universal safe default (it depends on
+            the specific calibration), but for reference, one real Contact4D
+            Aria `rgb` camera stays smooth and monotonic out to ~65-70
+            degrees (comfortably past its ~70-degree real image corner) and
+            is already growing explosively by 80-85 degrees -- see
+            `contact4d.projection`, which applies this for Aria keypoint
+            projection.
 
     Returns:
         ``(N, 2)`` pixel coordinates in the camera's native (unrotated)
-        frame. Points behind the camera (``z <= 0``) are returned as
-        ``(-1, -1)``. For ``left``/``right`` streams, pass the result through
+        frame. Points behind the camera (``z <= 0``), or beyond
+        `max_valid_angle_deg` if given, are returned as ``(-1, -1)``. For
+        ``left``/``right`` streams, pass the result through
         `rotate_to_upright` to match the as-shipped image orientation.
     """
     points_cam = np.asarray(points_cam, dtype=np.float64)
@@ -56,6 +84,10 @@ def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray, eps: floa
     r = np.sqrt(r_sq)
     theta = np.arctan(r)
     theta_sq = theta**2
+
+    invalid = behind
+    if max_valid_angle_deg is not None:
+        invalid = invalid | (theta > np.radians(max_valid_angle_deg))
 
     radial = np.ones(len(points_cam))
     theta_pow = theta_sq.copy()
@@ -77,18 +109,21 @@ def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray, eps: floa
     uv_distorted[:, 1] += (s[2:4] * radial_powers_2_4).sum(axis=1)
 
     points_2d = intrinsics[0] * uv_distorted + intrinsics[1:3]
-    points_2d[behind] = -1.0
+    points_2d[invalid] = -1.0
     return points_2d
 
 
 def rotate_to_upright(points_2d: np.ndarray, image_width: int, image_height: int) -> np.ndarray:
     """Rotate raw-device-frame pixel coordinates to the as-shipped image frame.
 
-    Only needed for the non-square Aria `left`/`right` streams (`rgb` is
-    square and this is a no-op for it up to relabeling). `image_width`/
-    `image_height` must be the *as-shipped* (upright) image size, exactly as
-    stored in ``metric_extrinsics/<aria>/<mode>.npz``'s ``image_width`` /
-    ``image_height``.
+    Needed for every Aria mode (`rgb`, `left`, `right`) -- all three are
+    shipped pre-rotated 90 degrees from the native sensor frame the
+    intrinsics are defined in. `rgb` being square only means the output
+    array shape is the same either way; the actual pixel positions still
+    need this rotation, it just doesn't announce itself via a shape error
+    if skipped. `image_width`/`image_height` must be the *as-shipped*
+    (upright) image size, exactly as stored in
+    ``camera_params/<aria>/<mode>.npz``'s ``image_width`` / ``image_height``.
     """
     del image_height  # only the (rotated) width is needed, kept for clarity/symmetry
     points_2d = np.asarray(points_2d, dtype=np.float64).copy()

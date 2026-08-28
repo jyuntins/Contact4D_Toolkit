@@ -1,10 +1,10 @@
 """Convert global (world-space) SMPL / SMPL-X / MANO annotations to camera space (item 2).
 
-``processed_data/{smpl,smplx,mano_params}`` store body/hand model parameters
+``processed_data/{smpl,smplx,mano}`` store body/hand model parameters
 in the same shared metric world frame as everything else in Contact4D. This
 module re-expresses them in one camera's frame instead, given that camera's
 rigid ``world_to_camera`` transform (from
-``processed_data/metric_extrinsics``).
+``processed_data/camera_params``).
 
 - SMPL / SMPL-X: `global_orient` is rotated and `transl` is re-derived about
   the shape-dependent *canonical pelvis* (the root joint location at zero
@@ -149,7 +149,8 @@ def mano_to_camera_space(
     world_to_camera: np.ndarray,
     tolerance_m: float = DEFAULT_TOLERANCE_M,
 ) -> Tuple[Dict[str, dict], Dict[str, dict]]:
-    """Convert a world-space ``mano_params`` annotation dict to camera space.
+    """Convert a world-space ``mano`` annotation dict (as loaded from
+    ``processed_data/mano/<frame>.npy``) to camera space.
 
     Unlike SMPL/SMPL-X this needs no body-model forward pass: MANO's stored
     ``vertices``/``joints`` are rotated and re-centered directly. Returns

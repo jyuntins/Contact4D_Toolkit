@@ -3,8 +3,8 @@
 8 intrinsic parameters, in order: ``fx, fy, cx, cy, k1, k2, k3, k4``.
 
 This is the model used by every exo (body-worn-external / fixed) camera in
-Contact4D's ``metric_extrinsics`` export (``camera_model: "OPENCV_FISHEYE"``
-in ``processed_data/metric_extrinsics/_metadata.json``). It matches OpenCV's
+Contact4D's ``camera_params`` export (``camera_model: "OPENCV_FISHEYE"``
+in ``processed_data/camera_params/_metadata.json``). It matches OpenCV's
 fisheye distortion convention: https://docs.opencv.org/3.4/db/d58/group__calib3d__fisheye.html
 
 The projection formula below is a from-scratch, dependency-free
@@ -21,17 +21,23 @@ import numpy as np
 NUM_INTRINSICS = 8
 
 
-def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
+def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray, max_valid_angle_deg: float = None) -> np.ndarray:
     """Project camera-frame points to pixel coordinates.
 
     Args:
         points_cam: ``(N, 3)`` points already in this camera's frame (see
             ``Camera.world_to_cam``).
         intrinsics: ``(8,)`` ``[fx, fy, cx, cy, k1, k2, k3, k4]``.
+        max_valid_angle_deg: if set, points whose ray angle off the optical
+            axis exceeds this are also treated as invalid, in addition to
+            ``z <= 0``. See `contact4d.cameras.aria_fisheye.project_cam_points`
+            for why this matters (a point in front of the camera at a
+            near-90-degree grazing angle can still extrapolate this model's
+            radial polynomial far outside its calibrated domain).
 
     Returns:
-        ``(N, 2)`` pixel coordinates. Points behind the camera (``z <= 0``)
-        are returned as ``(-1, -1)``.
+        ``(N, 2)`` pixel coordinates. Points behind the camera (``z <= 0``),
+        or beyond `max_valid_angle_deg` if given, are returned as ``(-1, -1)``.
     """
     points_cam = np.asarray(points_cam, dtype=np.float64)
     intrinsics = np.asarray(intrinsics, dtype=np.float64)
@@ -51,6 +57,10 @@ def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray) -> np.nda
     theta = np.arctan(r)
     theta_d = theta * (1 + k1 * theta**2 + k2 * theta**4 + k3 * theta**6 + k4 * theta**8)
 
+    invalid = behind
+    if max_valid_angle_deg is not None:
+        invalid = invalid | (theta > np.radians(max_valid_angle_deg))
+
     safe_r = np.where(r > 1e-9, r, 1.0)
     scale = np.where(r > 1e-9, theta_d / safe_r, 1.0)
     x_prime = scale * a
@@ -59,5 +69,5 @@ def project_cam_points(points_cam: np.ndarray, intrinsics: np.ndarray) -> np.nda
     u = fx * x_prime + cx
     v = fy * y_prime + cy
     points_2d = np.stack([u, v], axis=1)
-    points_2d[behind] = -1.0
+    points_2d[invalid] = -1.0
     return points_2d

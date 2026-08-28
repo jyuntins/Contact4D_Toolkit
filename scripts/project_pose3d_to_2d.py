@@ -28,7 +28,6 @@ def main() -> int:
     parser.add_argument("--mode", default="rgb", help='"rgb" for exo; "rgb"/"left"/"right" for aria')
     parser.add_argument("--frame", required=True, type=int)
     parser.add_argument("--kind", choices=["body", "hand", "both"], default="both")
-    parser.add_argument("--body-source", choices=["poses3d", "fit_poses3d"], default="fit_poses3d")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--visualize", action="store_true", help="also save a skeleton-overlay JPEG")
     args = parser.parse_args()
@@ -36,10 +35,10 @@ def main() -> int:
     camera = io.load_camera(args.sequence_path, args.camera, args.mode, args.frame)
     results = {}
     if args.kind in ("body", "both"):
-        body_3d = io.load_annotation(io.annotation_path(args.sequence_path, args.body_source, args.frame))
+        body_3d = io.load_annotation(io.annotation_path(args.sequence_path, "body_pose3d", args.frame))
         results["body"] = projection.project_body_pose3d(body_3d, camera)
     if args.kind in ("hand", "both"):
-        hand_3d = io.load_annotation(io.annotation_path(args.sequence_path, "pose_corrective", args.frame))
+        hand_3d = io.load_annotation(io.annotation_path(args.sequence_path, "hand_pose3d", args.frame))
         results["hand"] = projection.project_hand_pose3d(hand_3d, camera)
 
     if args.output_dir:

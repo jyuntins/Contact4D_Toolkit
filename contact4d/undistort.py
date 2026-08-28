@@ -9,19 +9,21 @@ from in the original image, then `cv2.remap`. This avoids relying on
 fisheye model) for Aria too -- both camera models are just a
 `project_cam_points` function to this one routine.
 
-**Aria `left`/`right` frame subtlety**: Aria's non-square SLAM streams are
-shipped pre-rotated 90 degrees from the camera's native sensor orientation
-(see `docs/cameras.md`), but the camera's intrinsics (and its distortion
-formula) are defined in that *native*, unrotated frame. So the map has to be
-built and sampled entirely in the native frame -- the as-shipped image is
-rotated into native orientation first, undistorted there, then rotated
-back. This exactly mirrors the internal Contact4D pipeline's
-`AriaCamera.get_undistorted_image_aria` (rotate CCW -> remap in native frame
--> rotate CW). Building the map directly against upright-frame pixel
+**Aria native-frame subtlety**: every Aria stream (`rgb`, `left`, `right`)
+is shipped pre-rotated 90 degrees from the camera's native sensor
+orientation (see `docs/cameras.md`), but the camera's intrinsics (and its
+distortion formula) are defined in that *native*, unrotated frame. So the
+map has to be built and sampled entirely in the native frame -- the
+as-shipped image is rotated into native orientation first, undistorted
+there, then rotated back. This exactly mirrors the internal Contact4D
+pipeline's `AriaCamera.get_undistorted_image_aria` (rotate CCW -> remap in
+native frame -> rotate CW), which applies unconditionally to every Aria
+mode, `rgb` included. Building the map directly against upright-frame pixel
 indices while using the camera's native-frame principal point (an earlier,
-buggy version of this module did that) silently misaligns Aria `left`/
-`right` outputs -- exo streams and Aria `rgb` (square) are unaffected either
-way.
+buggy version of this module did that, and additionally skipped the
+rotation entirely for `rgb` on the mistaken assumption that being square
+made it a no-op) silently misaligns Aria outputs -- only exo streams are
+unaffected.
 """
 
 from __future__ import annotations
@@ -36,16 +38,16 @@ from .cameras import aria_fisheye, exo_fisheye
 
 
 def _needs_native_frame_rotation(camera: Camera) -> bool:
-    return camera.model == ARIA_FISHEYE and camera.mode in ("left", "right")
+    return camera.model == ARIA_FISHEYE
 
 
 def _native_canvas_size(camera: Camera) -> Tuple[int, int]:
     """(width, height) of the camera's own distortion-model frame.
 
-    Equal to `(camera.image_width, camera.image_height)` for every camera
-    except Aria `left`/`right`, whose as-shipped (upright) frame is rotated
-    90 degrees relative to the native frame the intrinsics/distortion model
-    are defined in.
+    Equal to `(camera.image_width, camera.image_height)` for every exo
+    camera; for every Aria mode (`rgb`, `left`, `right`) the as-shipped
+    (upright) frame is rotated 90 degrees relative to the native frame the
+    intrinsics/distortion model are defined in.
     """
     if _needs_native_frame_rotation(camera):
         return camera.image_height, camera.image_width
@@ -102,8 +104,8 @@ def build_undistort_maps(
     """Build `cv2.remap`-compatible maps that undistort images from `camera`.
 
     The maps operate in `camera`'s *native* distortion-model frame (see
-    `_native_canvas_size`) -- for every camera except Aria `left`/`right`
-    this is the same as the as-shipped image; for those two, feed
+    `_native_canvas_size`) -- for exo cameras this is the same as the
+    as-shipped image; for every Aria mode (`rgb`, `left`, `right`), feed
     `cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)` in and rotate the
     remapped result back with `cv2.ROTATE_90_CLOCKWISE` (or just call
     `undistort_image`, which does this for you).

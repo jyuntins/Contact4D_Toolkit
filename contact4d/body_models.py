@@ -17,10 +17,29 @@ from pathlib import Path
 from typing import Dict, Tuple, Union
 
 import numpy as np
-import smplx
+import scipy.sparse  # noqa: F401  (must import before the numpy alias shim below)
 import torch
 
 PathLike = Union[str, Path]
+
+# The official SMPL/MANO .pkl weight files carry chumpy Ch objects, so loading
+# them pulls in `chumpy`, which still does `from numpy import bool, int, ...`.
+# NumPy>=2.0 removed those bare aliases (they used to just be the builtins),
+# which breaks that import. Restore them if missing, without touching any
+# alias NumPy itself still defines.
+import warnings as _warnings  # noqa: E402
+
+for _alias, _builtin in (
+    ("bool", bool), ("int", int), ("float", float), ("complex", complex),
+    ("object", object), ("str", str), ("unicode", str),
+):
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("ignore", FutureWarning)
+        _has_alias = hasattr(np, _alias)
+    if not _has_alias:
+        setattr(np, _alias, _builtin)
+
+import smplx  # noqa: E402  (must come after the shim above)
 
 _MODEL_FILE = {
     "smpl": ("smpl", "SMPL_NEUTRAL.pkl"),

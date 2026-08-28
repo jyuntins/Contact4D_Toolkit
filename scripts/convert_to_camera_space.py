@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contact4d import camera_space, io
 from contact4d.body_models import BodyModelCache
 
-SOURCE_DIR = {"smpl": "smpl", "smplx": "smplx", "mano": "mano_params"}
+SOURCE_DIR = {"smpl": "smpl", "smplx": "smplx", "mano": "mano"}
 
 
 def main() -> int:

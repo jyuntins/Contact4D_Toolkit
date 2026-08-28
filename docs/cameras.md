@@ -1,20 +1,22 @@
 # Cameras and calibration
 
 Every camera trajectory (rigid pose *and* intrinsics, per frame) lives in
-`processed_data/metric_extrinsics/<camera>/<mode>.npz`, one file per
+`processed_data/camera_params/<camera>/<mode>.npz`, one file per
 `(camera, mode)` pair, covering every frame of the sequence. This is the
 **only** calibration source you should need -- `contact4d.io.load_camera`
 wraps it into a `contact4d.cameras.Camera` you can hand to every other tool
-in this package.
+in this package. (Older exports may use the previous folder name
+`metric_extrinsics` instead; `contact4d.io` falls back to it automatically
+if `camera_params` isn't present.)
 
 ## World frame
 
-All annotations (`poses3d`, `smpl`, `smplx`, `mano_params`, ...) live in one
+All annotations (`body_pose3d`, `smpl`, `smplx`, `mano`, ...) live in one
 shared **metric world frame**, anchored to one Aria device's trajectory
-(see `processed_data/metric_extrinsics/_metadata.json`'s `"anchor_aria"`
+(see `processed_data/camera_params/_metadata.json`'s `"anchor_aria"`
 field). Units are meters.
 
-## `metric_extrinsics/<camera>/<mode>.npz` schema
+## `camera_params/<camera>/<mode>.npz` schema
 
 | array | shape | dtype | meaning |
 |---|---|---|---|
@@ -27,7 +29,7 @@ field). Units are meters.
 
 Convention: **column vectors**, `x_camera = world_to_camera @ [x_world, y_world, z_world, 1]`.
 
-`processed_data/metric_extrinsics/_metadata.json` (one per sequence) lists
+`processed_data/camera_params/_metadata.json` (one per sequence) lists
 every exported `(camera, mode)` pair plus, per stream, its `camera_model`
 string (`"OPENCV_FISHEYE"` or `"ARIA_RADTAN_THIN_PRISM_FISHEYE_15"`) and
 image size -- `contact4d.io.load_camera`/`MetricExtrinsics` read this for
@@ -51,10 +53,14 @@ every `camNN` stream (`mode="rgb"` only).
 focal length, 6 radial + 2 tangential + 4 thin-prism distortion terms. Used
 by every `ariaNN` stream (`mode` one of `rgb`/`left`/`right`).
 
-**Rotation quirk**: Aria's `left`/`right` (SLAM) streams are stored rotated
-90 degrees from the camera's native sensor frame (`rgb` is square, so this
-doesn't matter for it). `Camera.project`/`Camera.cam_to_image` already apply
-this rotation automatically for `mode in ("left", "right")` -- see
+**Rotation quirk**: every Aria mode (`rgb`, `left`, `right`) is physically
+mounted rotated 90 degrees from the device's upright/human-view frame, and
+is shipped pre-rotated back to upright, but the intrinsics/distortion model
+is defined in the native (unrotated) sensor frame regardless of mode. `rgb`
+being square hides this behind a shape check -- it looks unaffected but the
+pixel *positions* still need the same correction as `left`/`right`.
+`Camera.project`/`Camera.cam_to_image` already apply this rotation
+automatically for every Aria mode -- see
 `contact4d.cameras.aria_fisheye.rotate_to_upright` if you're projecting
 manually instead of going through `Camera`.
 
@@ -64,7 +70,7 @@ manually instead of going through `Camera`.
 from contact4d import io, projection
 
 camera = io.load_camera(sequence_path, "cam05", "rgb", frame_id=1)
-body_3d = io.load_annotation(io.annotation_path(sequence_path, "fit_poses3d", frame_id=1))
+body_3d = io.load_annotation(io.annotation_path(sequence_path, "body_pose3d", frame_id=1))
 body_2d = projection.project_body_pose3d(body_3d, camera)  # {person_id: (17,3) x,y,conf}
 ```
 

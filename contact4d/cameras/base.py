@@ -1,7 +1,7 @@
 """Shared camera abstraction used by every contact4d tool.
 
 A `Camera` is built from one frame of a
-``processed_data/metric_extrinsics/<camera>/<mode>.npz`` trajectory (see
+``processed_data/camera_params/<camera>/<mode>.npz`` trajectory (see
 ``docs/cameras.md``): a rigid world-to-camera transform, the camera's native
 intrinsics vector, and the image size. `model` selects which distortion
 model interprets `intrinsics`.
@@ -18,7 +18,7 @@ from . import aria_fisheye, exo_fisheye
 EXO_FISHEYE = "exo_fisheye"
 ARIA_FISHEYE = "aria_fisheye"
 
-# camera_model strings as stored in metric_extrinsics/_metadata.json
+# camera_model strings as stored in camera_params/_metadata.json
 _CAMERA_MODEL_ALIASES = {
     "OPENCV_FISHEYE": EXO_FISHEYE,
     "ARIA_RADTAN_THIN_PRISM_FISHEYE_15": ARIA_FISHEYE,
@@ -64,21 +64,34 @@ class Camera:
         points_world = np.asarray(points_world, dtype=np.float64)
         return points_world @ self.rotation.T + self.translation
 
-    def cam_to_image(self, points_cam: np.ndarray) -> np.ndarray:
-        """Project camera-frame ``(N, 3)`` points -> pixel ``(N, 2)``."""
+    def cam_to_image(self, points_cam: np.ndarray, max_valid_angle_deg: float = None) -> np.ndarray:
+        """Project camera-frame ``(N, 3)`` points -> pixel ``(N, 2)``.
+
+        `max_valid_angle_deg`: see `aria_fisheye.project_cam_points` /
+        `exo_fisheye.project_cam_points` -- points beyond it (as well as
+        points behind the camera) come back as the ``(-1, -1)`` sentinel.
+        """
         if self.model == EXO_FISHEYE:
-            return exo_fisheye.project_cam_points(points_cam, self.intrinsics)
-        points_2d = aria_fisheye.project_cam_points(points_cam, self.intrinsics)
-        if self.mode in ("left", "right"):
-            points_2d = aria_fisheye.rotate_to_upright(points_2d, self.image_width, self.image_height)
+            return exo_fisheye.project_cam_points(points_cam, self.intrinsics, max_valid_angle_deg=max_valid_angle_deg)
+        # Every Aria mode (rgb, left, right) is shipped pre-rotated 90 degrees
+        # from the native sensor frame the intrinsics are defined in -- rgb
+        # being square hides this behind a shape check, but the pixel
+        # positions are still wrong without the rotation. See aria_fisheye.
+        points_2d = aria_fisheye.project_cam_points(points_cam, self.intrinsics, max_valid_angle_deg=max_valid_angle_deg)
+        # rotate_to_upright would otherwise turn the (-1, -1) sentinel into
+        # some other (still off-image, but no longer recognizable) value --
+        # remember which rows were invalid and reapply the sentinel after.
+        invalid = (points_2d[:, 0] == -1.0) & (points_2d[:, 1] == -1.0)
+        points_2d = aria_fisheye.rotate_to_upright(points_2d, self.image_width, self.image_height)
+        points_2d[invalid] = -1.0
         return points_2d
 
-    def project(self, points_world: np.ndarray) -> np.ndarray:
+    def project(self, points_world: np.ndarray, max_valid_angle_deg: float = None) -> np.ndarray:
         """World-frame ``(N, 3)`` points -> pixel ``(N, 2)``, the common case."""
-        return self.cam_to_image(self.world_to_cam(points_world))
+        return self.cam_to_image(self.world_to_cam(points_world), max_valid_angle_deg=max_valid_angle_deg)
 
     @classmethod
-    def from_metric_extrinsics_frame(
+    def from_camera_params_frame(
         cls,
         name: str,
         mode: str,
@@ -88,9 +101,9 @@ class Camera:
         image_width: int,
         image_height: int,
     ) -> "Camera":
-        """Build a Camera from one frame's worth of metric_extrinsics arrays.
+        """Build a Camera from one frame's worth of camera_params arrays.
 
-        `camera_model` is the raw string from ``metric_extrinsics/<camera>/
+        `camera_model` is the raw string from ``camera_params/<camera>/
         _metadata.json``'s ``camera_metadata[...]["camera_model"]`` (e.g.
         ``"OPENCV_FISHEYE"``); it is mapped to this package's model names.
         """

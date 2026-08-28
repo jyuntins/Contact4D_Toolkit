@@ -11,13 +11,13 @@ BODY_EDGES: Sequence[Tuple[int, int]] = (
     (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9),
     (6, 8), (8, 10), (5, 11), (6, 12), (11, 12), (11, 13),
     (13, 15), (12, 14), (14, 16),
-)  # 17-joint COCO-style body skeleton, matches poses3d/fit_poses3d joint order
+)  # 17-joint COCO-style body skeleton, matches body_pose3d joint order
 
 HAND_EDGES: Sequence[Tuple[int, int]] = tuple(
     (a, b)
     for finger in ((0, 1, 2, 3, 4), (0, 5, 6, 7, 8), (0, 9, 10, 11, 12), (0, 13, 14, 15, 16), (0, 17, 18, 19, 20))
     for a, b in zip(finger[:-1], finger[1:])
-)  # 21-joint MANO-order hand skeleton, matches pose_corrective joint order
+)  # 21-joint MANO-order hand skeleton, matches hand_pose3d joint order
 
 _PALETTE = ((30, 220, 30), (40, 40, 240), (240, 160, 30), (220, 40, 220))
 
@@ -37,13 +37,30 @@ def draw_keypoints_2d(
     / `project_hand_pose3d`. `kind` selects the skeleton edges ("body" ->
     `BODY_EDGES`, "hand" -> `HAND_EDGES`). Returns a new BGR image; `image`
     is not modified in place.
+
+    In addition to `confidence_threshold`, a point is only drawn if it
+    falls within a generous (50%-of-frame) margin around `image`'s bounds.
+    This is a backstop, not the primary fix: `project_body_pose3d`/
+    `project_hand_pose3d` already zero the confidence of Aria joints beyond
+    `contact4d.projection.DEFAULT_ARIA_MAX_VALID_ANGLE_DEG`, which is what
+    actually avoids projecting a wearer's own near-camera joints (e.g. an
+    eye a few centimeters from a head-mounted Aria device) to a wildly
+    out-of-frame pixel coordinate in the first place. This bounds check just
+    means a stray far-out-of-frame point -- however it got that way -- draws
+    as absent rather than as a line shooting off to some distant corner.
     """
     edges = BODY_EDGES if kind == "body" else HAND_EDGES
     canvas = image.copy()
+    height, width = image.shape[:2]
+    margin_x, margin_y = width / 2.0, height / 2.0
     for index, (key, keypoints) in enumerate(sorted(keypoints_2d.items())):
         keypoints = np.asarray(keypoints)
         color = _PALETTE[index % len(_PALETTE)]
-        valid = keypoints[:, 2] > confidence_threshold
+        in_bounds = (
+            (keypoints[:, 0] >= -margin_x) & (keypoints[:, 0] <= width + margin_x)
+            & (keypoints[:, 1] >= -margin_y) & (keypoints[:, 1] <= height + margin_y)
+        )
+        valid = (keypoints[:, 2] > confidence_threshold) & in_bounds
         for a, b in edges:
             if valid[a] and valid[b]:
                 point_a = tuple(np.rint(keypoints[a, :2]).astype(int))

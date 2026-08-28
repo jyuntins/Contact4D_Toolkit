@@ -5,7 +5,7 @@ files holding a single Python `dict`, saved as a 0-d numpy object array
 (`np.load(path, allow_pickle=True).item()` -- or just use
 `contact4d.io.load_annotation(path)`). They're keyed by person id
 (e.g. `"aria01"`) for body annotations, or by hand side (`"left"`/`"right"`)
-for hand annotations. `metric_extrinsics` is the one exception: it's one
+for hand annotations. `camera_params` is the one exception: it's one
 `.npz` per camera/mode covering every frame of the sequence at once (see
 `docs/cameras.md`).
 
@@ -13,13 +13,13 @@ All coordinates are in the sequence's shared **metric world frame** (meters)
 unless noted otherwise ("camera space" annotations use each camera's own
 frame instead -- see `docs/cameras.md` and `contact4d.camera_space`).
 
-## Body 3D keypoints -- `poses3d/`, `fit_poses3d/`
+## Body 3D keypoints -- `body_pose3d/`
 
 `{person_id: array(17, 4)}`, `float64`, columns `(x, y, z, confidence)`.
-`fit_poses3d` is the temporally-smoothed/refined version of `poses3d` and is
-the recommended source for downstream use.
+The temporally-smoothed/refined 3D body keypoints -- the recommended source
+for downstream use.
 
-## Hand 3D keypoints -- `pose_corrective/`
+## Hand 3D keypoints -- `hand_pose3d/`
 
 `{"left"/"right": array(21, 4)}`, `float64`, columns `(x, y, z, confidence)`,
 MANO joint order. This is the recommended (post-corrective) source for hand
@@ -65,7 +65,7 @@ Matches the output shape of `contact4d.projection.project_hand_pose3d`.
 | `vertices` | (10475, 3) | f32 | world space |
 | `joints` | (127, 3) | f32 | world space |
 
-## MANO -- `mano_params/` (`schema_version: 2`)
+## MANO -- `mano/` (`schema_version: 2`)
 
 `{"left"/"right": {...}}`:
 
@@ -108,7 +108,7 @@ annotation above, **plus**:
 camera's frame; local pose (`body_pose`, `hand_pose`, MANO's per-joint
 `hand_pose`) and shape (`betas`) are unchanged.
 
-## Camera calibration -- `metric_extrinsics/<camera>/<mode>.npz`
+## Camera calibration -- `camera_params/<camera>/<mode>.npz`
 
 See `docs/cameras.md` for the full schema and both supported intrinsics models.
 

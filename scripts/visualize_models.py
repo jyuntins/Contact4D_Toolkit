@@ -21,8 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contact4d import io
 from contact4d.body_models import BodyModelCache
 from contact4d.mesh_render_fast import render_meshes_fast
+from contact4d.undistort import undistort_image
 
-SOURCE_DIR = {"smpl": "smpl", "smplx": "smplx", "mano": "mano_params"}
+SOURCE_DIR = {"smpl": "smpl", "smplx": "smplx", "mano": "mano"}
 
 
 def main() -> int:
@@ -48,6 +49,16 @@ def main() -> int:
     image = cv2.imread(str(io.image_path(args.sequence_path, args.camera, args.mode, args.frame)))
     if image is None:
         raise FileNotFoundError("could not read the source image")
+
+    if args.renderer == "pyrender":
+        # pyrender is pinhole-only; undistort once, up front, using the
+        # default target intrinsics (matches contact4d.mesh_render_pyrender's
+        # own IntrinsicsCamera). Doing this once here -- rather than inside
+        # render_meshes_pyrender on every call below -- matters because this
+        # loop composites multiple model kinds onto one running `image`;
+        # undistorting again on each iteration would compound into a badly
+        # warped result. See contact4d/mesh_render_pyrender.py's docstring.
+        image = undistort_image(image, camera)
 
     for kind in args.models:
         annotation = io.load_annotation(io.annotation_path(args.sequence_path, SOURCE_DIR[kind], args.frame))

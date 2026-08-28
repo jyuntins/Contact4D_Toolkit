@@ -4,7 +4,7 @@
 Example:
     python scripts/keypoints_to_camera_space.py \\
         --sequence-path /path/to/001_<name> --camera cam05 --frame 1 \\
-        --source fit_poses3d --output-dir out/keypoints_cam
+        --source body_pose3d --output-dir out/keypoints_cam
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def main() -> int:
     parser.add_argument("--mode", default="rgb")
     parser.add_argument("--frame", required=True, type=int)
     parser.add_argument(
-        "--source", default="fit_poses3d",
-        choices=["poses3d", "fit_poses3d", "pose_corrective"],
+        "--source", default="body_pose3d",
+        choices=["body_pose3d", "hand_pose3d"],
         help="which world-space keypoint annotation to transform",
     )
     parser.add_argument("--output-dir", type=Path)

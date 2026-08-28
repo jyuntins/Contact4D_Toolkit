@@ -18,7 +18,7 @@ from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contact4d import camera_space, undistort
+from contact4d import camera_space, projection, undistort
 from contact4d.cameras import ARIA_FISHEYE, EXO_FISHEYE, Camera
 from contact4d.cameras import aria_fisheye, exo_fisheye
 
@@ -48,9 +48,26 @@ def test_exo_fisheye_behind_camera_is_sentinel():
 
 
 def test_aria_fisheye_principal_point_on_axis():
+    # Camera.project always rotates Aria output to the as-shipped upright
+    # frame (every mode, including rgb -- see aria_fisheye module docstring),
+    # so the on-axis ray lands at rotate_to_upright(cu, cv), not (cu, cv)
+    # directly.
     camera = identity_camera(ARIA_FISHEYE, ARIA_RGB_INTRINSICS)
     point_2d = camera.project(np.array([[0.0, 0.0, 5.0]]))
-    assert np.allclose(point_2d[0], ARIA_RGB_INTRINSICS[1:3], atol=1e-6)
+    expected = aria_fisheye.rotate_to_upright(
+        ARIA_RGB_INTRINSICS[1:3].reshape(1, 2), camera.image_width, camera.image_height
+    )
+    assert np.allclose(point_2d[0], expected[0], atol=1e-6)
+
+
+def test_aria_fisheye_rotation_applies_to_rgb_mode_too():
+    # Regression test: rgb is square, so skipping rotate_to_upright for it
+    # doesn't show up as a shape mismatch -- only as silently wrong pixel
+    # positions. Camera.project must rotate rgb exactly like left/right.
+    camera_rgb = identity_camera(ARIA_FISHEYE, ARIA_RGB_INTRINSICS, mode="rgb")
+    camera_left = identity_camera(ARIA_FISHEYE, ARIA_RGB_INTRINSICS, mode="left")
+    point = np.array([[0.3, -0.1, 2.0]])
+    assert np.allclose(camera_rgb.project(point), camera_left.project(point))
 
 
 def test_aria_fisheye_behind_camera_is_sentinel():
@@ -65,6 +82,55 @@ def test_aria_rotate_to_upright_matches_documented_formula():
     rotated = aria_fisheye.rotate_to_upright(points, width, height)
     expected = np.array([[width - 50.0, 100.0], [width - 630.0, 10.0]])
     assert np.allclose(rotated, expected, atol=1e-9)
+
+
+def test_aria_fisheye_max_valid_angle_clips_grazing_points_not_near_axis_ones():
+    # Regression test for a real symptom: a joint only centimeters from a
+    # head-mounted Aria device (z > 0, so not caught by the existing
+    # "behind camera" check) can sit at a near-90-degree grazing angle,
+    # where this model's radial polynomial -- calibrated only within the
+    # camera's real FOV -- extrapolates to a wildly out-of-frame pixel
+    # coordinate instead of erroring.
+    near_axis = np.array([[np.tan(np.radians(30.0)), 0.0, 1.0]])
+    unclipped = aria_fisheye.project_cam_points(near_axis, ARIA_RGB_INTRINSICS)
+    clipped = aria_fisheye.project_cam_points(near_axis, ARIA_RGB_INTRINSICS, max_valid_angle_deg=80.0)
+    assert np.allclose(unclipped, clipped)  # well within the cutoff -- unaffected
+    assert not np.array_equal(clipped[0], [-1.0, -1.0])
+
+    grazing = np.array([[np.tan(np.radians(85.0)), 0.0, 1.0]])
+    result = aria_fisheye.project_cam_points(grazing, ARIA_RGB_INTRINSICS, max_valid_angle_deg=80.0)
+    assert np.array_equal(result[0], [-1.0, -1.0])
+
+
+def test_aria_camera_project_preserves_invalid_sentinel_through_rotation():
+    # Camera.cam_to_image rotates Aria pixel coordinates to the as-shipped
+    # frame (rotate_to_upright); the (-1, -1) sentinel for an
+    # invalid/clipped point must survive that rotation unchanged, not turn
+    # into some other, no-longer-recognizable off-image value.
+    camera = identity_camera(ARIA_FISHEYE, ARIA_RGB_INTRINSICS, mode="left")
+    grazing = np.array([[np.tan(np.radians(85.0)), 0.0, 1.0]])
+    result = camera.cam_to_image(grazing, max_valid_angle_deg=80.0)
+    assert np.array_equal(result[0], [-1.0, -1.0])
+
+
+def test_project_body_pose3d_default_clips_aria_grazing_joints_but_not_exo():
+    aria_camera = identity_camera(ARIA_FISHEYE, ARIA_RGB_INTRINSICS)
+    exo_camera = identity_camera(EXO_FISHEYE, EXO_INTRINSICS)
+    body = {"person": np.array([
+        [0.0, 0.0, 5.0, 1.0],                                       # on-axis: valid everywhere
+        [5.0 * np.tan(np.radians(85.0)), 0.0, 5.0, 1.0],            # 85-degree grazing angle
+    ])}
+
+    aria_result = projection.project_body_pose3d(body, aria_camera)
+    assert aria_result["person"][0, 2] == 1.0  # on-axis joint untouched
+    assert aria_result["person"][1, 2] == 0.0  # grazing joint: confidence zeroed by the Aria default
+
+    exo_result = projection.project_body_pose3d(body, exo_camera)
+    assert exo_result["person"][1, 2] == 1.0  # exo isn't clipped by the Aria-specific default
+
+    # explicit None disables the Aria default too
+    unclipped = projection.project_body_pose3d(body, aria_camera, max_valid_angle_deg=None)
+    assert unclipped["person"][1, 2] == 1.0
 
 
 def test_camera_rejects_wrong_intrinsics_length():
