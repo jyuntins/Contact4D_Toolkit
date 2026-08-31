@@ -1,5 +1,7 @@
 # Contact4D toolkit
 
+**[Website](https://jyuntins.github.io/Contact4D/) · [Paper](https://openreview.net/pdf?id=5DPvfQtAjm) · [Dataset](https://huggingface.co/datasets/Jyun-Ting/Contact4D/tree/main)**
+
 Contact4D is a large-scale egocentric+exocentric human motion capture
 dataset: synchronized footage from ~18 fixed exo cameras and one or more
 Aria egocentric devices per sequence, with per-frame 3D body/hand
