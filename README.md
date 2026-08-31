@@ -2,7 +2,7 @@
 
 Official project website: [https://jyuntins.github.io/Contact4D/](https://jyuntins.github.io/Contact4D/)
 
-**[Website](https://jyuntins.github.io/Contact4D/) · [Paper](https://openreview.net/pdf?id=5DPvfQtAjm) · [Dataset](https://huggingface.co/datasets/Jyun-Ting/Contact4D/tree/main)**
+**[Website](https://jyuntins.github.io/Contact4D/) · [Paper](https://ieeexplore.ieee.org/abstract/document/11533240) · [Dataset](https://huggingface.co/datasets/Jyun-Ting/Contact4D/tree/main)**
 
 Contact4D is a large-scale egocentric+exocentric human motion capture
 dataset: synchronized footage from ~18 fixed exo cameras and one or more
