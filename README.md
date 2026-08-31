@@ -1,5 +1,7 @@
 # Contact4D toolkit
 
+Official project website: [https://jyuntins.github.io/Contact4D/](https://jyuntins.github.io/Contact4D/)
+
 **[Website](https://jyuntins.github.io/Contact4D/) · [Paper](https://openreview.net/pdf?id=5DPvfQtAjm) · [Dataset](https://huggingface.co/datasets/Jyun-Ting/Contact4D/tree/main)**
 
 Contact4D is a large-scale egocentric+exocentric human motion capture
@@ -8,10 +10,10 @@ Aria egocentric devices per sequence, with per-frame 3D body/hand
 keypoints, fitted SMPL/SMPL-X/MANO body and hand models, and full camera
 calibration -- all in one shared metric world frame.
 
-This repository is the **consumer-side toolkit**: everything you need to
-turn the released annotations into 2D projections, camera-space model
-parameters, mesh visualizations, and undistorted images, without needing
-any of the internal capture/processing pipeline. It's a standalone,
+This repository is the **Contact4D dataset toolkit** (consumer side): everything
+you need to turn the released annotations into 2D projections, camera-space
+model parameters, mesh visualizations, and undistorted images, without
+needing any of the internal capture/processing pipeline. It's a standalone,
 lightweight package (`numpy`/`opencv`/`scipy`/`torch`/`smplx`) -- no COLMAP,
 no proprietary config system, and (despite the egocentric data including
 Aria cameras) no Aria SDK dependency either: both camera models are
@@ -39,6 +41,7 @@ high-quality (`pyrender`) renderer setup.
 | 3 | Visualize SMPL/SMPL-X/MANO on images | `scripts/visualize_models.py` | `contact4d.mesh_render_fast`, `contact4d.mesh_render_pyrender` |
 | 4 | Undistort images (exo or Aria) | `scripts/undistort_images.py` | `contact4d.undistort` |
 | 5 | 3D keypoints to camera space | `scripts/keypoints_to_camera_space.py` | `contact4d.keypoints_camera_space` |
+| 6 | Visualize ground-truth fingertip contact | `scripts/visualize_finger_contact.py` | `contact4d.finger_contact` |
 
 Every script takes `--sequence-path` pointing at one downloaded sequence
 directory (e.g. `.../001_<name>/`) and reads calibration straight from its
@@ -68,6 +71,10 @@ python scripts/undistort_images.py --sequence-path "$SEQ" --camera aria01 --mode
 # 5. bring body_pose3d into aria01/rgb's camera frame
 python scripts/keypoints_to_camera_space.py --sequence-path "$SEQ" --camera aria01 --mode rgb \
     --frame 1 --source body_pose3d --output-dir out/keypoints_cam
+
+# 6. overlay ground-truth fingertip contact state on cam05
+python scripts/visualize_finger_contact.py --sequence-path "$SEQ" --camera cam05 --frame 1 \
+    --output-dir out/finger_contact
 ```
 
 ## Docs
