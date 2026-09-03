@@ -29,6 +29,24 @@ def load_annotation(path: PathLike) -> dict:
     return value
 
 
+def load_finger_contact(sequence_path: PathLike) -> Dict[int, Dict[str, bool]]:
+    """Load ``processed_data/finger_contact/annotations.json``.
+
+    Unlike every other annotation type (one ``.npy`` per frame), this is a
+    single JSON file per sequence: ``{"<frame_id>": {"left_thumb": bool,
+    "left_index": bool, ..., "right_pinky": bool}}``, one entry per
+    annotated frame -- not every frame in the sequence necessarily has one.
+    Returns the same shape with integer frame-id keys, matching every other
+    frame-id convention in this package. See `contact4d.finger_contact` for
+    the fingertip-to-MANO-joint mapping used to visualize this.
+    """
+    path = Path(sequence_path) / "processed_data" / "finger_contact" / "annotations.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"no finger_contact annotations: {path}")
+    raw = json.loads(path.read_text())
+    return {int(frame_id): contacts for frame_id, contacts in raw.items()}
+
+
 def numeric_frame_ids(directory: PathLike, suffix: str = ".npy") -> List[int]:
     """Sorted list of integer frame ids for files named like ``00001<suffix>``."""
     directory = Path(directory)

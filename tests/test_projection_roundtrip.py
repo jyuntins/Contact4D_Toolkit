@@ -18,9 +18,13 @@ from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contact4d import camera_space, projection, undistort
+import json
+
+from contact4d import camera_space, io, projection, undistort
 from contact4d.cameras import ARIA_FISHEYE, EXO_FISHEYE, Camera
 from contact4d.cameras import aria_fisheye, exo_fisheye
+from contact4d.finger_contact import FINGER_NAMES, FINGERTIP_JOINTS, contact_by_finger
+from contact4d.visualize import HAND_EDGES
 
 EXO_INTRINSICS = np.array([1762.1, 1762.9, 1904.7, 1076.0, 0.0908, -0.0404, 0.0194, -0.0066])
 ARIA_RGB_INTRINSICS = np.array(
@@ -216,3 +220,36 @@ def test_mano_to_camera_space_rejects_non_rigid_transform():
     not_rigid[0, 0] = 2.0
     with pytest.raises(ValueError):
         camera_space.mano_to_camera_space(source, not_rigid)
+
+
+def test_fingertip_joints_match_hand_edges_endpoints():
+    # FINGERTIP_JOINTS must stay in sync with HAND_EDGES: each fingertip is
+    # the joint with no outgoing edge (the last one in its finger's chain).
+    has_outgoing_edge = {a for a, _ in HAND_EDGES}
+    all_joints = {joint for edge in HAND_EDGES for joint in edge}
+    tips_without_outgoing_edge = all_joints - has_outgoing_edge
+    assert set(FINGERTIP_JOINTS.values()) == tips_without_outgoing_edge
+    assert set(FINGERTIP_JOINTS) == set(FINGER_NAMES)
+
+
+def test_contact_by_finger_extracts_one_side():
+    frame_contact = {
+        "left_thumb": True, "left_index": False, "left_middle": True, "left_ring": False, "left_pinky": True,
+        "right_thumb": False, "right_index": False, "right_middle": False, "right_ring": False, "right_pinky": False,
+    }
+    assert contact_by_finger(frame_contact, "left") == {
+        "thumb": True, "index": False, "middle": True, "ring": False, "pinky": True,
+    }
+    assert contact_by_finger(frame_contact, "right") == dict.fromkeys(FINGER_NAMES, False)
+
+
+def test_load_finger_contact_parses_json_with_int_frame_ids(tmp_path):
+    sequence_path = tmp_path / "001_fake_sequence"
+    contact_dir = sequence_path / "processed_data" / "finger_contact"
+    contact_dir.mkdir(parents=True)
+    payload = {"1": {f"{side}_{finger}": (finger == "thumb") for side in ("left", "right") for finger in FINGER_NAMES}}
+    (contact_dir / "annotations.json").write_text(json.dumps(payload))
+
+    loaded = io.load_finger_contact(sequence_path)
+    assert loaded == {1: payload["1"]}
+    assert isinstance(next(iter(loaded)), int)

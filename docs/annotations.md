@@ -108,6 +108,25 @@ annotation above, **plus**:
 camera's frame; local pose (`body_pose`, `hand_pose`, MANO's per-joint
 `hand_pose`) and shape (`betas`) are unchanged.
 
+## Fingertip contact -- `finger_contact/annotations.json`
+
+Ground-truth per-fingertip contact state -- Contact4D's core contribution
+alongside pose. One JSON file per sequence (not one `.npy` per frame like
+every other annotation type): `{"<frame_id>": {"left_thumb": bool,
+"left_index": bool, "left_middle": bool, "left_ring": bool, "left_pinky":
+bool, "right_thumb": bool, ..., "right_pinky": bool}}`. `True` means that
+fingertip is in contact with an object/surface in that frame. Not every
+frame in the sequence is necessarily annotated. Load with
+`contact4d.io.load_finger_contact` (converts keys to `int` frame ids,
+matching every other frame-id convention here); each finger name maps onto
+the 21-joint MANO/`hand_pose3d` skeleton via
+`contact4d.finger_contact.FINGERTIP_JOINTS`.
+`contact4d.visualize.draw_finger_contact_2d` overlays contact state as two
+fixed corner panels (one per hand, five dots each -- red = contact, green =
+no contact) rather than on the hand itself, so it needs no keypoint
+projection; see its docstring for the `mirror` option (on by default, for
+an exo camera facing the subject).
+
 ## Camera calibration -- `camera_params/<camera>/<mode>.npz`
 
 See `docs/cameras.md` for the full schema and both supported intrinsics models.

@@ -31,8 +31,8 @@ as-shipped upright frame `image` is in -- then rotated back before
 compositing onto `image`. See `contact4d.cameras.aria_fisheye` /
 `contact4d.undistort` module docstrings for why this applies to `rgb` too.
 
-Rendering style: a flat accent-blue mesh color, a two-light (no ambient
-term) rig, and alpha-channel (not binary depth-mask) compositing for
+Rendering style: a flat accent-blue mesh color, a two-light rig with a
+small ambient fill term, and alpha-channel (not binary depth-mask) compositing for
 anti-aliased mesh edges.
 """
 
@@ -94,7 +94,11 @@ def render_meshes_pyrender(
     needs_rotation = camera.model == ARIA_FISHEYE
     render_width, render_height = (height, width) if needs_rotation else (width, height)
 
-    scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0], ambient_light=np.zeros(3))
+    # A small ambient term keeps surfaces facing away from both directional
+    # lights (e.g. the underside of fingers/palm) from rendering pure black
+    # -- with zero ambient, that unlit underside reads as a dark
+    # shadow-like band hugging the mesh's lower contour.
+    scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0], ambient_light=np.full(3, 0.25))
     material = pyrender.MetallicRoughnessMaterial(
         metallicFactor=0.2, alphaMode="OPAQUE", baseColorFactor=(*mesh_color, 1.0),
     )
@@ -118,7 +122,20 @@ def render_meshes_pyrender(
     if needs_rotation:
         rgba = cv2.rotate(rgba, cv2.ROTATE_90_CLOCKWISE)
 
+    # pyrender renders against a fully transparent black scene background, so
+    # at partial-coverage silhouette-edge pixels (antialiasing) the resolved
+    # RGB is already coverage-premultiplied: N-k/N samples missed the mesh
+    # and contributed (0,0,0), so bgr == mesh_color * coverage there, not the
+    # straight (unpremultiplied) mesh color. Treating `bgr` as straight color
+    # and multiplying it by `mesh_alpha` (== coverage * alpha) a second time,
+    # as this used to do, double-applies the coverage factor at every edge
+    # pixel -- e.g. at 50% coverage with alpha=1: mesh_alpha=0.5,
+    # bgr=0.5*mesh_color, old composed = 0.5*(0.5*mesh_color) + 0.5*image,
+    # whose weights sum to 0.75, not 1 -- the missing 0.25 is silently lost
+    # to black, producing a visible dark fringe/"shadow" hugging every mesh
+    # silhouette. Since bgr is already coverage-premultiplied, only `alpha`
+    # (not the full per-pixel `mesh_alpha`) belongs on it.
     bgr = rgba[:, :, :3][:, :, ::-1].astype(np.float32)
     mesh_alpha = (rgba[:, :, 3:4].astype(np.float32) / 255.0) * alpha
-    composed = mesh_alpha * bgr + (1 - mesh_alpha) * image.astype(np.float32)
+    composed = alpha * bgr + (1 - mesh_alpha) * image.astype(np.float32)
     return composed.astype(np.uint8)
